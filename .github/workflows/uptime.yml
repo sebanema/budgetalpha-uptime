@@ -1,0 +1,49 @@
+name: Uptime
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+    - cron: "0 6 1 * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.event.schedule != '0 6 1 * *'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: The login page answers 200
+        run: |
+          status="$(curl -sS -o /dev/null -w '%{http_code}' -m 30 --retry 2 --retry-all-errors \
+            https://budgetalpha.xyz/accounts/login/ || true)"
+          echo "login page: ${status:-no answer}"
+          test "$status" = 200
+
+      - name: Last night's backup is there and no server error in the last 30 minutes
+        if: always()
+        run: |
+          body="$(curl -fsS -m 30 --retry 2 --retry-all-errors https://budgetalpha.xyz/health/)"
+          printf '%s\n' "$body"
+          printf '%s\n' "$body" | grep -qx "backup ok"
+          printf '%s\n' "$body" | grep -qx "errors none"
+
+  keepalive:
+    if: github.event.schedule == '0 6 1 * *'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Commit so GitHub keeps the schedule on
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "keepalive $(date -u +%F)"
+          git push
